@@ -227,9 +227,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 <span id="s2RemainText" style="font-size:12px; font-weight:800; color:#be123c;">待清零：30 字</span>
 </div>
 <div id="s2EbbinghausBar" class="ebbinghaus-bar"></div>
-<div class="big-char-box">
+<div class="big-char-box" style="padding:32px 12px;">
 <div id="s2Char" class="big-char">科</div>
-<div class="char-meta">去掉拼音！一次认出推进1阶，满4阶彻底移出不会字本</div>
 </div>
 <div id="s2RevealArea" style="display:none;" class="reveal-card">
 <div id="s2RevPy" class="pinyin-display">kē</div>
@@ -252,7 +251,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 </div>
 <div class="big-char-box" style="padding:22px 14px;">
 <div id="s3Sentence" class="sentence-display" style="font-size:24px; color:#0f172a;">句子加载中...</div>
-<div id="s3Hint" style="font-size:13.5px; color:#64748b; margin-top:10px; font-weight:700;">请点击下方最恰当的字填入括号中：</div>
+<div id="s3Hint" style="display:none;"></div>
 </div>
 <div id="s3Options" class="options-grid"></div>
 <div id="s3Feedback" style="display:none;" class="reveal-card"></div>
@@ -822,35 +821,28 @@ function getStrictUnknownPool() {
 // 智能构建阅读与字词配对：先找到命中不会字最多的阅读短文作为第4关目标短文，再把该短文内的不会字优先排在第1~3关最前面！
 function rebuildDaily30() {
   const strictObjs = getStrictUnknownPool();
-  const unknownSet = new Set(strictObjs.map(x => x.ch));
-
-  // 1. 为第4关挑选命中不会字最多的短文
-  const scopeReadings = READINGS_DB.filter(r => currentScope === 'P5' ? r.level === 'P5' : r.level === 'P1-P4');
-  orderedReadings = scopeReadings.map(r => {
-    let hitCount = 0;
-    const hitChars = [];
-    for (const ch of new Set(r.text)) {
-      if (unknownSet.has(ch)) {
-        hitCount += 1;
-        hitChars.push(ch);
-      }
-    }
-    return { ...r, hitCount, hitChars };
-  }).sort((a, b) => b.hitCount - a.hitCount);
-  readIdx = 0;
-
-  const topPassage = orderedReadings[0];
-  const passageCharsSet = new Set(topPassage ? topPassage.text.split('') : []);
-
-  // 2. 将第4关目标短文中包含的不会字排在第一优先级（确保第4关阅读时能直接巩固刚才学的字！）
-  const inPassageUnknowns = strictObjs.filter(x => passageCharsSet.has(x.ch));
-  const otherDueUnknowns = strictObjs.filter(x => !passageCharsSet.has(x.ch) && (!zhStore.progress[x.ch] || !zhStore.progress[x.ch].nextDue || zhStore.progress[x.ch].nextDue <= todayStr));
-  const restUnknowns = strictObjs.filter(x => !inPassageUnknowns.includes(x) && !otherDueUnknowns.includes(x));
-
-  const orderedUnknowns = [...inPassageUnknowns, ...otherDueUnknowns, ...restUnknowns];
-  daily30List = orderedUnknowns.slice(0, 30);
+  daily30List = strictObjs.slice(0, 30);
   s1Idx = 0;
   s2Queue = shuffle([...daily30List]);
+
+  // 动态联动：让阅读短文（第4关第一篇）动态嵌入今天练习的不会字，做到“所学即所读”！
+  const scopeReadings = READINGS_DB.filter(r => currentScope === 'P5' ? r.level === 'P5' : r.level === 'P1-P4');
+  if (scopeReadings.length > 0 && daily30List.length > 0) {
+    const primaryPassage = scopeReadings[0];
+    const targetCharsStr = daily30List.slice(0, 5).map(x => x.ch).join("、");
+    primaryPassage.title = "今日生字专练小故事";
+    primaryPassage.theme = "语境联动专项复习";
+    primaryPassage.text = `今天我们在华文课上重点复习了以下几个生字：${targetCharsStr}。大家在阅读这篇短文时，要特别注意这些字的读音和在句子里的意思。只要认真朗读并理解文章内容，就能彻底攻克它们！`;
+    primaryPassage.q = "这篇短文主要提醒我们复习什么内容？";
+    primaryPassage.opts = ["复习数学公式", "重点复习今天练习的几个华文生字", "准备去公园野餐", "学习画画技巧"];
+    primaryPassage.ans = 1;
+    primaryPassage.exp = "短文开头明确指出今天重点复习了相关生字，通过语境阅读加深印象。";
+    orderedReadings = [primaryPassage, ...scopeReadings.slice(1)];
+  } else {
+    orderedReadings = scopeReadings;
+  }
+  readIdx = 0;
+
   buildStage3Questions();
   renderStage1();
   renderStage2();
@@ -1062,7 +1054,7 @@ function buildStage3Questions() {
     return {
       item,
       prompt: promptText,
-      subHint: `提示：${item.grade} ${item.lesson} · 拼音 ${item.py.split('/')[0]} · 配词：${item.words.replaceAll(item.ch, '□')}`,
+      subHint: ``,
       ans: item.ch,
       opts: shuffle([item.ch, ...distractors])
     };
