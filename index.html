@@ -553,8 +553,8 @@ let dbRef = null;
 let sharedStarsRef = null;
 try {
   firebase.initializeApp(firebaseConfig);
-  dbRef = firebase.database().ref('chinese_p3_p4_data');
-  sharedStarsRef = firebase.database().ref('shared_student_data/stars');
+  dbRef = firebase.database().ref('stella_psle_2026_secret/chinese_p3_p4_data');
+  sharedStarsRef = firebase.database().ref('stella_psle_2026_secret/stars');
   document.getElementById('cloudStatus').className = 'cloud-status cloud-live';
   document.getElementById('cloudStatus').innerText = '☁️ 云端已同步';
 } catch(e) {
