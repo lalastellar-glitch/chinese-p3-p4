@@ -208,6 +208,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 </div>
 
 <div id="s1EbbinghausBar" class="ebbinghaus-bar"></div>
+<div id="s1PassageMatchTip" style="font-size:12px; color:#9a3412; background:#fef3c7; border:1px solid #fcd34d; padding:6px 10px; border-radius:8px; margin-bottom:8px;"></div>
 <div class="big-char-box" style="padding:18px 12px;">
 <div id="s1Pinyin" class="pinyin-display" style="font-size:32px; margin-bottom:2px;">kē</div>
 <div id="s1Char" class="big-char">科</div>
@@ -251,7 +252,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 </div>
 <div class="big-char-box" style="padding:22px 14px;">
 <div id="s3Sentence" class="sentence-display" style="font-size:24px; color:#0f172a;">句子加载中...</div>
-<div id="s3Hint" style="display:none;"></div>
+<div id="s3Hint" style="font-size:14px; color:#0369a1; font-weight:700; margin-top:8px;"></div>
 </div>
 <div id="s3Options" class="options-grid"></div>
 <div id="s3Feedback" style="display:none;" class="reveal-card"></div>
@@ -553,8 +554,8 @@ let dbRef = null;
 let sharedStarsRef = null;
 try {
   firebase.initializeApp(firebaseConfig);
-  dbRef = firebase.database().ref('stella_psle_2026_secret/chinese_p3_p4_data');
-  sharedStarsRef = firebase.database().ref('stella_psle_2026_secret/stars');
+  dbRef = firebase.database().ref('chinese_p3_p4_data');
+  sharedStarsRef = firebase.database().ref('shared_student_data/stars');
   document.getElementById('cloudStatus').className = 'cloud-status cloud-live';
   document.getElementById('cloudStatus').innerText = '☁️ 云端已同步';
 } catch(e) {
@@ -819,28 +820,116 @@ function getStrictUnknownPool() {
 }
 
 // 智能构建阅读与字词配对：先找到命中不会字最多的阅读短文作为第4关目标短文，再把该短文内的不会字优先排在第1~3关最前面！
+// 为每个生字匹配或生成真实自然的《欢乐伙伴》配词造句（绝不拼凑生字列表）
+const CUSTOM_CHAR_SENT_MAP = {
+  "科": "我们在实验室里做了一个有趣的（ ？ ）学实验。",
+  "将": "只要现在努力学习，（ ？ ）来一定能实现理想。",
+  "当": "遇到不懂的问题，我们（ ？ ）然应该向老师请教。",
+  "司": "巴士（ ？ ）机叔叔每天安全地把乘客送到目的地。",
+  "希": "妈妈（ ？ ）望我从小养成爱阅读的好习惯。",
+  "望": "周末我们一家人去医院看（ ？ ）生病的外婆。",
+  "军": "英勇的（ ？ ）队日夜驻守在边疆，保卫国家。",
+  "卫": "每天饭前便后勤洗手，才能保持个人（ ？ ）生。",
+  "练": "为了下周的华文听写，我每天认真（ ？ ）习写字。",
+  "努": "只要你肯付出（ ？ ）力，成绩一定会有所进步。",
+  "愿": "大家都（ ？ ）意伸出援手，帮助有困难的同学。",
+  "实": "做一个诚（ ？ ）守信的孩子，才能赢得大家的信任。",
+  "篇": "今天华文老师在课堂上朗读了一（ ？ ）感人的故事。",
+  "复": "每天放学回家后，我都会先温习和（ ？ ）习功课。",
+  "取": "经过一个学期的刻苦训练，他终于（ ？ ）得了优异成绩。",
+  "举": "老师提出问题后，同学们纷纷踊跃（ ？ ）手回答。",
+  "翻": "请大家把华文课本（ ？ ）开到第十五页。",
+  "页": "睡前我读完了这本故事书的最后一（ ？ ）。",
+  "姓": "请在试卷左上角工整地写上你的班级和（ ？ ）名。",
+  "陈": "教我们华文的（ ？ ）老师既温柔又有耐心。",
+  "名": "这本童话书非常有（ ？ ），许多小朋友都读过。",
+  "胖": "动物园里的大熊猫圆滚滚的，看起来（ ？ ）乎乎真可爱。",
+  "瘦": "奶奶生病了一场，整个人看起来消（ ？ ）了不少。",
+  "李": "果园里的（ ？ ）子树结满了酸甜可口的果子。",
+  "矮": "弟弟虽然个子比我（ ？ ），但跑起步来却飞快。",
+  "姨": "邻居李阿（ ？ ）为人热情，经常送水果给我们吃。",
+  "趣": "科学馆里有许多有（ ？ ）的互动展览。",
+  "意": "我不明白这个成语的（ ？ ）思，便去查字典。",
+  "思": "遇到难题时要冷静（ ？ ）考，不要急着放弃。",
+  "卷": "发下华文试（ ？ ）后，我第一时间订正上面的错字。",
+  "强": "经常参加体育锻炼，能让我们的身体变得更（ ？ ）壮。",
+  "壮": "哥哥每天坚持跑步，身体练得非常强（ ？ ）。",
+  "福": "全家人围坐在一起吃团圆饭，感到无比幸（ ？ ）。",
+  "猪": "农场里的几只小（ ？ ）正趴在草地上晒太阳。",
+  "题": "这道数学（ ？ ）目有点难，我算了两遍才做出来。",
+  "退": "面对困难时，我们应该勇敢前进，绝不后（ ？ ）。",
+  "辆": "马路边停着一（ ？ ）崭新的红色消防车。",
+  "形": "天上的白云变化多端，呈现出各种不同的（ ？ ）状。",
+  "按": "我们每天都要（ ？ ）时完成作业，不能拖延。",
+  "盖": "喝完水后，请记得把水壶的（ ？ ）子拧紧。",
+  "吸": "清晨的公园空气清新，大家都在深深地呼（ ？ ）。",
+  "管": "班长负责（ ？ ）理班上的图书角，把书摆得整整齐齐。",
+  "钟": "墙上的时（ ？ ）敲响了九下，提醒我该上床睡觉了。",
+  "伙": "休息时间到了，我和几个小（ ？ ）伴一起在操场跳绳。",
+  "伴": "周末我们应该多抽时间陪（ ？ ）家里的老人。",
+  "背": "每天早上，我都（ ？ ）着书包高高兴兴地去上学。",
+  "颜": "雨过天晴，天空出现了一道五（ ？ ）六色的彩虹。",
+  "角": "课室的（ ？ ）落里摆放着几盆翠绿的植物。",
+  "睡": "为了保证充足的睡眠，我们每晚都要早点（ ？ ）觉。",
+  "准": "同学们正在认真（ ？ ）备下周的校庆表演。",
+  "改": "知错能（ ？ ）才是懂事的好孩子。",
+  "迟": "今天早上路上堵车，害得我差点上学（ ？ ）到。",
+  "惯": "我们从小就要养成早睡早起的良好习（ ？ ）。",
+  "陪": "妈妈今天特地请假，（ ？ ）我去牙科诊所检查牙齿。",
+  "化": "几年没回老家，村子里发生了翻天覆地的变（ ？ ）。",
+  "腿": "跑完八百米长跑后，我的两条大（ ？ ）酸痛极了。",
+  "乌": "傍晚时分，天空中突然飘来了一大片（ ？ ）云。",
+  "龟": "小乌（ ？ ）受到惊吓时，就会把头缩进硬壳里。",
+  "芽": "春天来了，泥土里的种子悄悄地发（ ？ ）了。",
+  "细": "做完试卷后，一定要从头到尾仔（ ？ ）检查一遍。"
+};
+
+function getAuthenticCharSentence(item) {
+  if (CUSTOM_CHAR_SENT_MAP[item.ch]) {
+    return `📖 语境造句填空：${CUSTOM_CHAR_SENT_MAP[item.ch]}`;
+  }
+  const wList = (item.words || item.ch).split('、');
+  const w0 = wList[0].trim();
+  const w1 = wList[1] ? wList[1].trim() : '';
+
+  // 1. 优先从 144 组听写词库中匹配包含该配词或生字的真实造句
+  const dictMatch = DICTATION_DB.find(d => d.w === w0 || (w1 && d.w === w1) || d.sent.includes(w0));
+  if (dictMatch) {
+    const cleanSent = dictMatch.sent.split('【')[0].replace(/[（）]/g, '');
+    if (cleanSent.includes(item.ch)) {
+      return `📖 语境造句填空：${cleanSent.replace(item.ch, '（ ？ ）')}`;
+    }
+  }
+
+  // 2. 优先从真实阅读短文中匹配包含该配词的自然句子（绝不使用拼凑句）
+  for (const r of READINGS_DB) {
+    if (r.text.includes('重点复习了以下几个生字')) continue;
+    const sents = r.text.split(/[。！？]/).filter(Boolean);
+    const matchS = sents.find(s => s.includes(w0) || s.includes(item.ch));
+    if (matchS) {
+      return `📖 课文语境填空：${matchS.replace(item.ch, '（ ？ ）')}。`;
+    }
+  }
+
+  // 3. 根据配词生成独立自然的完整造句语境
+  const maskedW0 = w0.replace(item.ch, '（ ？ ）');
+  const otherHint = w1 ? `（另一常用词：${w1.replace(item.ch, ' □ ')}）` : '';
+  return `📖 选字补全句子中的词语：我们在造句本上写下了“${maskedW0}”这个词。${otherHint}`;
+}
+
 function rebuildDaily30() {
-  const strictObjs = getStrictUnknownPool();
+  let strictObjs = getStrictUnknownPool();
+  // 若不会字本为空，默认加载当前年级前 20 个核心生字供孩子直接闯关练习，确保第1关随时可点！
+  if (strictObjs.length === 0) {
+    strictObjs = getScopeCharPool().slice(0, 20);
+  }
   daily30List = strictObjs.slice(0, 30);
   s1Idx = 0;
   s2Queue = shuffle([...daily30List]);
 
-  // 动态联动：让阅读短文（第4关第一篇）动态嵌入今天练习的不会字，做到“所学即所读”！
+  // 保持《欢乐伙伴》原汁原味的阅读短文，绝不用生字列表去篡改短文内容！
   const scopeReadings = READINGS_DB.filter(r => currentScope === 'P5' ? r.level === 'P5' : r.level === 'P1-P4');
-  if (scopeReadings.length > 0 && daily30List.length > 0) {
-    const primaryPassage = scopeReadings[0];
-    const targetCharsStr = daily30List.slice(0, 5).map(x => x.ch).join("、");
-    primaryPassage.title = "今日生字专练小故事";
-    primaryPassage.theme = "语境联动专项复习";
-    primaryPassage.text = `今天我们在华文课上重点复习了以下几个生字：${targetCharsStr}。大家在阅读这篇短文时，要特别注意这些字的读音和在句子里的意思。只要认真朗读并理解文章内容，就能彻底攻克它们！`;
-    primaryPassage.q = "这篇短文主要提醒我们复习什么内容？";
-    primaryPassage.opts = ["复习数学公式", "重点复习今天练习的几个华文生字", "准备去公园野餐", "学习画画技巧"];
-    primaryPassage.ans = 1;
-    primaryPassage.exp = "短文开头明确指出今天重点复习了相关生字，通过语境阅读加深印象。";
-    orderedReadings = [primaryPassage, ...scopeReadings.slice(1)];
-  } else {
-    orderedReadings = scopeReadings;
-  }
+  orderedReadings = scopeReadings.length > 0 ? [...scopeReadings] : [...READINGS_DB];
   readIdx = 0;
 
   buildStage3Questions();
@@ -867,7 +956,7 @@ function updateStagePills() {
   const doneMap = (zhStore.stageDoneToday && zhStore.stageDoneToday[todayStr]) || {};
   for (let i = 1; i <= 4; i++) {
     const el = document.getElementById('stBtn' + i);
-    el.className = 'stage-pill' + (currentStage === i ? ' active' : '') + (doneMap['s' + i] ? ' done' : '');
+    if (el) el.className = 'stage-pill' + (currentStage === i ? ' active' : '') + (doneMap['s' + i] ? ' done' : '');
   }
 }
 
@@ -886,17 +975,17 @@ function awardStageStars(stageKey, starsToAdd, msg) {
   updateStagePills();
 }
 
-// --- 第1关：认字热身（优先展示第4关短文关联生字） ---
+// --- 第1关：认字热身 ---
 function renderStage1() {
   const matchTipEl = document.getElementById('s1PassageMatchTip');
   if (daily30List.length === 0) {
     document.getElementById('s1LessonTag').innerText = `纯不会字模式 · 暂无不会字`;
     document.getElementById('s1Progress').innerText = `0 / 0 字`;
     document.getElementById('s1EbbinghausBar').innerHTML = '';
-    matchTipEl.innerText = '💡 请先点右上角【🧰 百宝箱 -> ⚡ 极速筛盲】挑出不会字，或点【➕ 粘贴生字】导入！';
+    if (matchTipEl) matchTipEl.innerText = '💡 请先点右上角【🧰 百宝箱 -> ⚡ 极速筛盲】挑出不会字，或点【➕ 粘贴生字】导入！';
     document.getElementById('s1Pinyin').innerText = `👏 零盲区`;
     document.getElementById('s1Char').innerText = `🎉`;
-    document.getElementById('s1Words').innerText = `目前“不会字本”为空！系统绝不拿已会的字浪费时间。`;
+    document.getElementById('s1Words').innerText = `目前“不会字本”为空！`;
     document.getElementById('s1Tip').innerHTML = `💡 您可以直接切换到第 4 关【阅读】或顶部【✍️ 词库听写】练习！`;
     return;
   }
@@ -905,11 +994,13 @@ function renderStage1() {
   const item = daily30List[s1Idx] || daily30List[0];
   const inTargetPassage = topPassage && topPassage.text.includes(item.ch);
 
-  document.getElementById('s1LessonTag').innerText = `${item.grade} · ${item.lesson} (盲区共 ${allUnknowns.length} 字)`;
+  document.getElementById('s1LessonTag').innerText = `${item.grade} · ${item.lesson}` + (allUnknowns.length > 0 ? ` (盲区共 ${allUnknowns.length} 字)` : ' (课本核心字)');
   document.getElementById('s1Progress').innerText = `第 ${s1Idx + 1} / ${daily30List.length} 字`;
-  matchTipEl.innerHTML = inTargetPassage
-    ? `📖 <strong>短文联动字：</strong>这个字一会儿会在第 4 关短文<strong>《${topPassage.title}》</strong>中出现，先把它记牢！`
-    : `🎯 <strong>艾宾浩斯到期复习字：</strong>搭配第 4 关短文<strong>《${topPassage ? topPassage.title : ''}》</strong>巩固！`;
+  if (matchTipEl) {
+    matchTipEl.innerHTML = inTargetPassage
+      ? `📖 <strong>短文联动字：</strong>这个字一会儿会在第 4 关短文<strong>《${topPassage.title}》</strong>中出现，先把它记牢！`
+      : `🎯 <strong>今日认字挑战：</strong>请大声读出字音与常用配词，读完点下方按钮切换下一个字！`;
+  }
 
   document.getElementById('s1Pinyin').innerText = item.py;
   document.getElementById('s1Char').innerText = item.ch;
@@ -926,8 +1017,7 @@ function speakStage1Current() {
 
 function nextStage1Char() {
   if (daily30List.length === 0) {
-    alert("请先去【🧰 百宝箱 -> ⚡ 极速筛盲】挑出孩子不会的字，或点顶部【➕ 粘贴生字】导入不会的字！");
-    openHubSub('screen');
+    rebuildDaily30();
     return;
   }
   if (s1Idx < daily30List.length - 1) {
@@ -1023,7 +1113,7 @@ function continueStage2AfterMiss() {
   renderStage2();
 }
 
-// --- 第3关：选词填空语境实战（结合第4关阅读短文中的真实句子！） ---
+// --- 第3关：选词填空语境实战（每个字使用独立真实造句，绝不拼凑） ---
 function buildStage3Questions() {
   if (daily30List.length === 0) {
     s3List = [];
@@ -1031,30 +1121,16 @@ function buildStage3Questions() {
     s3CorrectCount = 0;
     return;
   }
-  const topPassage = orderedReadings[readIdx] || orderedReadings[0];
-  const passageSentences = topPassage ? topPassage.text.split(/[。！？]/).filter(Boolean) : [];
-
-  // 优先抽在第4关短文中出现过的不会字来出题
-  const inPass = daily30List.filter(x => topPassage && topPassage.text.includes(x.ch));
-  const others = daily30List.filter(x => !inPass.includes(x));
-  const picked = [...inPass, ...shuffle(others)].slice(0, Math.min(10, daily30List.length));
-
+  const picked = daily30List.slice(0, Math.min(10, daily30List.length));
   const distractorPool = daily30List.length >= 4 ? daily30List : getScopeCharPool();
-  s3List = picked.map(item => {
-    const wordList = item.words.split('、');
-    const targetWord = wordList[0] || item.ch;
-    const otherWord = wordList[1] ? `（配词：${wordList[1]}）` : '';
-    // 如果第4关短文里有包含这个字的句子，直接用短文原句挖空预热！
-    const matchSent = passageSentences.find(s => s.includes(item.ch));
-    const promptText = matchSent
-      ? `📖 短文原句预热：${matchSent.replace(item.ch, '（ ？ ）')}。`
-      : `请选字补全词语：【 ${targetWord.replace(item.ch, '（ ？ ）')} 】 ${otherWord}`;
 
+  s3List = picked.map(item => {
+    const promptText = getAuthenticCharSentence(item);
     const distractors = shuffle(distractorPool.filter(x => x.ch !== item.ch)).slice(0, 3).map(x => x.ch);
     return {
       item,
       prompt: promptText,
-      subHint: ``,
+      subHint: `💡 读音与配词提示：${item.py} （${item.words.replaceAll(item.ch, ' □ ')}）`,
       ans: item.ch,
       opts: shuffle([item.ch, ...distractors])
     };
