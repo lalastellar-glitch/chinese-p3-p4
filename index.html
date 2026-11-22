@@ -683,6 +683,11 @@ if (sharedStarsRef) {
       zhStore.stars = Math.round(val * 10) / 10;
       saveLocal();
       updateDashboard();
+      if (currentMode === 'hub' && currentHubSub === 'shop') renderShopAndReport();
+    } else if (zhStore.stars === null) {
+      zhStore.stars = 0;
+      saveLocal();
+      updateDashboard();
     }
   });
 }
