@@ -180,7 +180,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
     <button id="scopeP5" class="scope-btn" onclick="setGradeScope('P5')">📕 五年级</button>
   </div>
   <div onclick="openHubSub('shop')" style="background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; padding:8px 14px; border-radius:12px; font-weight:900; font-size:14.5px; cursor:pointer; display:flex; align-items:center; gap:4px; box-shadow:0 2px 6px rgba(217,119,6,0.28); white-space:nowrap;">
-    ⭐ <span id="statStars">0</span>
+    ⭐ <span id="statStars">⏳</span>
   </div>
 </div>
 
@@ -220,8 +220,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 <div id="s1Char" class="big-char">科</div>
 <div id="s1Words" class="words-display" style="margin-top:10px; color:#881337;">常用配词：科学、科目</div>
 <div id="s1Tip" class="tip-display" style="max-width:92%; margin:8px auto 0 auto; text-align:left;">💡 记忆提示</div>
-<div style="margin-top:10px;">
+<div style="margin-top:10px; display:flex; justify-content:center; gap:8px; flex-wrap:wrap;">
 <button class="audio-btn" onclick="speakStage1Current()">🔊 听字音与配词</button>
+<button class="audio-btn" onclick="flagStage1HardChar()" style="background:#ffe4e6; border-color:#fecdd3; color:#be123c;">📌 标记为第1关易错字（加入第3关考测）</button>
 </div>
 </div>
 <button class="btn-next" onclick="nextStage1Char()">🔊 大声读完，下一个 (读完本轮 +2⭐) →</button>
@@ -250,11 +251,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 </div>
 </div>
 
-<!-- 第3关：填空（大号楷体配词造句填空） -->
+<!-- 第3关：填空（优先抽取第1、2关常错字与历史高频错字，共15道实战题） -->
 <div id="stage3Box" style="display:none;">
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-<span style="font-size:12px; font-weight:800; color:#0284c7; background:#e0f2fe; padding:3px 9px; border-radius:8px;">第3关 · 语境选词填空</span>
-<span id="s3Progress" style="font-size:12px; font-weight:700; color:#64748b;">第 1 / 10 题</span>
+<span style="font-size:12px; font-weight:800; color:#0284c7; background:#e0f2fe; padding:3px 9px; border-radius:8px;">第3关 · 错字专项选词填空（15题）</span>
+<span id="s3Progress" style="font-size:12px; font-weight:700; color:#64748b;">第 1 / 15 题</span>
+</div>
+<div id="s3FocusBanner" style="font-size:12px; color:#9f1239; background:#ffe4e6; border:1px solid #fecdd3; padding:6px 10px; border-radius:8px; margin-bottom:8px; font-weight:700;">
+🎯 优先抓出第1、2关出错的字 + 历史高频错字进行专项考测！
 </div>
 <div class="big-char-box" style="padding:22px 14px;">
 <div id="s3Sentence" class="sentence-display" style="font-size:24px; color:#0f172a;">句子加载中...</div>
@@ -634,14 +638,15 @@ if (!zhStore.redeemHistory) zhStore.redeemHistory = [];
 if (!Array.isArray(zhStore.customRewards) || zhStore.customRewards.length === 0) {
   zhStore.customRewards = [...DEFAULT_SHOP_REWARDS];
 }
-if (zhStore.stars === undefined) zhStore.stars = 0;
+if (typeof zhStore.stars !== 'number') zhStore.stars = null;
 
 if (sharedStarsRef) {
   sharedStarsRef.on('value', (snap) => {
     const val = snap.val();
     if (typeof val === 'number') {
-      zhStore.stars = Math.max(zhStore.stars || 0, val);
-      document.getElementById('statStars').innerText = zhStore.stars;
+      zhStore.stars = Math.round(val * 10) / 10;
+      saveLocal();
+      updateDashboard();
     }
   });
 }
@@ -693,8 +698,8 @@ function syncAll() {
       redeemHistory: zhStore.redeemHistory
     });
   }
-  if (sharedStarsRef) {
-    sharedStarsRef.set(zhStore.stars);
+  if (sharedStarsRef && typeof zhStore.stars === 'number') {
+    sharedStarsRef.set(Math.round(zhStore.stars * 10) / 10);
   }
 }
 
@@ -1009,7 +1014,7 @@ function goStage(n) {
   updateStagePills();
   if (n === 1) renderStage1();
   if (n === 2) renderStage2();
-  if (n === 3) renderStage3Q();
+  if (n === 3) { buildStage3Questions(); renderStage3Q(); }
   if (n === 4) {
     renderReading();
     setTimeout(() => speakCurrentPassage(), 250);
@@ -1146,6 +1151,7 @@ function missStage2Char() {
   if (s2Queue.length === 0) return;
   const item = s2Queue[0];
   item._missedInS2 = true;
+  item._s2MissCount = (item._s2MissCount || 0) + 1;
   if (!zhStore.progress[item.ch]) {
     zhStore.progress[item.ch] = { streak: 0, mistakes: 1, nextDue: todayStr };
   } else {
@@ -1177,22 +1183,98 @@ function continueStage2AfterMiss() {
   renderStage2();
 }
 
-// --- 第3关：选词填空语境实战（每个字使用独立真实造句，绝不拼凑） ---
+function flagStage1HardChar() {
+  const item = daily30List[s1Idx];
+  if (!item) return;
+  item._missedInS1 = true;
+  if (!zhStore.progress[item.ch]) {
+    zhStore.progress[item.ch] = { streak: 0, mistakes: 1, nextDue: todayStr };
+  } else {
+    zhStore.progress[item.ch].streak = 0;
+    zhStore.progress[item.ch].mistakes = (zhStore.progress[item.ch].mistakes || 0) + 1;
+    zhStore.progress[item.ch].nextDue = todayStr;
+  }
+  if (!zhStore.unknownList.includes(item.ch)) {
+    zhStore.unknownList.push(item.ch);
+  }
+  syncAll();
+  updateDashboard();
+  renderCommonEbbinghausBar('s1EbbinghausBar', zhStore.progress[item.ch]);
+  speakStage1Current();
+  const matchTipEl = document.getElementById('s1PassageMatchTip');
+  if (matchTipEl) {
+    matchTipEl.innerHTML = `📌 已将【<strong>${item.ch}</strong>】记为第1关易错字（累计错误 ${zhStore.progress[item.ch].mistakes} 次），稍后第3关填空考试将重点考这个字！`;
+  }
+}
+
+// --- 第3关：错字专项选词填空实战（优先抽取第1、2关常错字 + 历史高频错字，共15道题） ---
 function buildStage3Questions() {
-  if (daily30List.length === 0) {
+  const scopePool = getScopeCharPool();
+  const candidateMap = new Map();
+
+  // 1. 加入今日闯关队列中的字（保留 _missedInS1 / _missedInS2 / _s2MissCount 标记）
+  (daily30List || []).forEach(item => {
+    candidateMap.set(item.ch, item);
+  });
+
+  // 2. 加入全部“不会字本”和“家长导入字”中的未通关生字（带有历史 mistakes 次数）
+  const allUnknownChars = Array.from(new Set([...(zhStore.unknownList || []), ...(zhStore.customPriorityChars || [])]));
+  allUnknownChars.forEach(ch => {
+    if (!candidateMap.has(ch)) {
+      const found = CHAR_MAP[ch] || scopePool.find(x => x.ch === ch) || CHAR_DB.find(x => x.ch === ch);
+      if (found) candidateMap.set(ch, found);
+    }
+  });
+
+  // 3. 若候选仍不足 15 个，从当前年级池中补充
+  if (candidateMap.size < 15) {
+    shuffle(scopePool).forEach(item => {
+      if (candidateMap.size < 25 && !candidateMap.has(item.ch)) {
+        candidateMap.set(item.ch, item);
+      }
+    });
+  }
+
+  const candidates = Array.from(candidateMap.values());
+  if (candidates.length === 0) {
     s3List = [];
     s3Idx = 0;
     s3CorrectCount = 0;
     return;
   }
-  const picked = daily30List.slice(0, Math.min(10, daily30List.length));
-  const distractorPool = daily30List.length >= 4 ? daily30List : getScopeCharPool();
 
-  s3List = picked.map(item => {
+  // 计算每个字的“错题权重分”：
+  // - 本轮第2关答错 (+100分，每错一次再+30分)
+  // - 本轮第1关标记易错 (+80分)
+  // - 历史第1/2/3关及筛查累计错误次数 mistakes (每次 +25分)
+  // - 仍在不会字本且未毕业 (+10分)
+  const scored = candidates.map(item => {
+    const p = zhStore.progress[item.ch] || {};
+    const histMistakes = p.mistakes || 0;
+    const s2Miss = (item._s2MissCount || 0) + (item._missedInS2 ? 1 : 0);
+    const s1Miss = item._missedInS1 ? 1 : 0;
+    const isUnfinished = (zhStore.unknownList || []).includes(item.ch) && !isCharCompletedAll4(item.ch) ? 1 : 0;
+    const score = s2Miss * 100 + s1Miss * 80 + histMistakes * 25 + isUnfinished * 10 + Math.random() * 5;
+    let reasonTag = '📖 课本高频巩固字';
+    if (s2Miss > 0) reasonTag = `🔥 第2关刚错 ${s2Miss} 次 · 重点复测`;
+    else if (s1Miss > 0) reasonTag = `📌 第1关标记易错字 · 重点复测`;
+    else if (histMistakes > 0) reasonTag = `⚠️ 第1/2关累计常错 ${histMistakes} 次`;
+    else if (isUnfinished > 0) reasonTag = `🎯 不会字本待攻克字`;
+    return { item, score, histMistakes, s2Miss, s1Miss, reasonTag };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  const pickedEntries = shuffle(scored.slice(0, Math.min(15, scored.length)));
+  const distractorPool = candidates.length >= 4 ? candidates : scopePool;
+
+  s3List = pickedEntries.map(entry => {
+    const item = entry.item;
     const promptText = getAuthenticCharSentence(item);
     const distractors = shuffle(distractorPool.filter(x => x.ch !== item.ch)).slice(0, 3).map(x => x.ch);
     return {
       item,
+      reasonTag: entry.reasonTag,
+      isPriorityWrong: (entry.s2Miss > 0 || entry.s1Miss > 0 || entry.histMistakes > 0),
       prompt: promptText,
       subHint: `💡 读音与配词提示：${item.py} （${item.words.replaceAll(item.ch, ' □ ')}）`,
       ans: item.ch,
@@ -1216,6 +1298,13 @@ function renderStage3Q() {
   }
   const q = s3List[s3Idx];
   s3Answered = false;
+  const wrongCnt = s3List.filter(x => x.isPriorityWrong).length;
+  const bannerEl = document.getElementById('s3FocusBanner');
+  if (bannerEl) {
+    bannerEl.innerHTML = wrongCnt > 0
+      ? `🎯 本轮共 <strong>${s3List.length}</strong> 道考题，其中 <strong>${wrongCnt}</strong> 题来自第1、2关常错字与历史易错字！ <span style="background:#fff; color:#be123c; padding:1px 6px; border-radius:6px; margin-left:4px;">${q.reasonTag}</span>`
+      : `🎯 本轮共 <strong>${s3List.length}</strong> 道课本核心选词填空考题（第1、2关若答错会自动优先纳入本关考测）`;
+  }
   document.getElementById('s3Progress').innerText = `第 ${s3Idx + 1} / ${s3List.length} 题`;
   document.getElementById('s3Sentence').innerText = q.prompt;
   document.getElementById('s3Hint').innerText = q.subHint;
@@ -1250,8 +1339,11 @@ function checkStage3Ans(btnEl, chosen, q) {
     fb.innerHTML = `<div style="color:#059669; font-weight:800; font-size:16px;">✅ 选对了！得 1 分 (+1 ⭐) 【${q.item.ch}】(${q.item.py})：${q.item.words}</div>`;
   } else {
     if (!zhStore.unknownList.includes(q.item.ch)) zhStore.unknownList.push(q.item.ch);
-    if (zhStore.progress[q.item.ch]) {
+    if (!zhStore.progress[q.item.ch]) {
+      zhStore.progress[q.item.ch] = { streak: 0, mistakes: 1, nextDue: todayStr };
+    } else {
       zhStore.progress[q.item.ch].streak = 0;
+      zhStore.progress[q.item.ch].mistakes = (zhStore.progress[q.item.ch].mistakes || 0) + 1;
       zhStore.progress[q.item.ch].nextDue = todayStr;
     }
     fb.innerHTML = `<div style="color:#e11d48; font-weight:800; font-size:16px;">❌ 选错了！正确汉字是【${q.item.ch}】(${q.item.py})：${q.item.words}</div>
@@ -2399,7 +2491,7 @@ function redeemReward(idx) {
     return;
   }
   if (confirm(`确定要消耗 ${r.cost} ⭐ 兑换【${r.title}】吗？`)) {
-    zhStore.stars -= r.cost;
+    zhStore.stars = Math.max(0, Math.round(((zhStore.stars || 0) - r.cost) * 10) / 10);
     zhStore.redeemHistory.push({ date: todayStr, title: r.title, cost: r.cost });
     syncAll();
     updateDashboard();
@@ -2413,7 +2505,7 @@ function parentAdjustStars() {
   if (pwd === "1234") {
     const val = prompt(`当前云端星星总数：${zhStore.stars} ⭐\n请输入修改后的新星星数：`, zhStore.stars);
     if (val !== null && !isNaN(val)) {
-      zhStore.stars = parseInt(val, 10);
+      zhStore.stars = Math.round(parseFloat(val) * 10) / 10;
       syncAll();
       updateDashboard();
       alert("✅ 星星数量已更新并同步至云端！");
@@ -2444,7 +2536,7 @@ function openPrintModal() {
 }
 
 function updateDashboard() {
-  document.getElementById('statStars').innerText = zhStore.stars || 0;
+  document.getElementById('statStars').innerText = (typeof zhStore.stars === 'number') ? (Math.round(zhStore.stars * 10) / 10) : '⏳';
   const pool = getScopeCharPool();
   const screenedCount = pool.filter(x => !!zhStore.screened[x.ch]).length;
   document.getElementById('statScreened').innerText = `${screenedCount}/${pool.length}`;
