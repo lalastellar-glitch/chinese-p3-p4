@@ -179,6 +179,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
     <button id="scopeP14" class="scope-btn active" onclick="setGradeScope('P14')">📗 一至四年级</button>
     <button id="scopeP5" class="scope-btn" onclick="setGradeScope('P5')">📕 五年级</button>
   </div>
+  <div id="topCloudBadge" onclick="forceSyncStarsNow()" title="点击立即同步云端星星" style="background:#dcfce7; color:#15803d; padding:8px 10px; border-radius:12px; font-weight:800; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:4px; border:1px solid #86efac; white-space:nowrap;">
+    ☁️ 同步中
+  </div>
   <div onclick="openHubSub('shop')" style="background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; padding:8px 14px; border-radius:12px; font-weight:900; font-size:14.5px; cursor:pointer; display:flex; align-items:center; gap:4px; box-shadow:0 2px 6px rgba(217,119,6,0.28); white-space:nowrap;">
     ⭐ <span id="statStars">⏳</span>
   </div>
@@ -608,15 +611,48 @@ const firebaseConfig = {
 
 let dbRef = null;
 let sharedStarsRef = null;
+let cloudReady = false;
+
+function setCloudBadgeState(state, text) {
+  const b1 = document.getElementById('cloudStatus');
+  if (b1) {
+    b1.className = 'cloud-status ' + (state === 'live' ? 'cloud-live' : 'cloud-local');
+    b1.innerText = text;
+  }
+  const b2 = document.getElementById('topCloudBadge');
+  if (b2) {
+    b2.innerText = text;
+    if (state === 'live') {
+      b2.style.background = '#dcfce7';
+      b2.style.color = '#15803d';
+      b2.style.borderColor = '#86efac';
+    } else if (state === 'error') {
+      b2.style.background = '#fee2e2';
+      b2.style.color = '#b91c1c';
+      b2.style.borderColor = '#fca5a5';
+    } else {
+      b2.style.background = '#fef3c7';
+      b2.style.color = '#b45309';
+      b2.style.borderColor = '#fcd34d';
+    }
+  }
+}
+
 try {
   firebase.initializeApp(firebaseConfig);
   dbRef = firebase.database().ref('chinese_p3_p4_data');
   sharedStarsRef = firebase.database().ref('shared_student_data/stars');
-  document.getElementById('cloudStatus').className = 'cloud-status cloud-live';
-  document.getElementById('cloudStatus').innerText = '☁️ 云端已同步';
+  setCloudBadgeState('syncing', '☁️ 连接云端中...');
+  firebase.database().ref('.info/connected').on('value', (snap) => {
+    if (snap.val() === true) {
+      cloudReady = true;
+      setCloudBadgeState('live', '☁️ 云端已连接');
+    } else {
+      setCloudBadgeState('syncing', '☁️ 云端重连中...');
+    }
+  });
 } catch(e) {
-  document.getElementById('cloudStatus').className = 'cloud-status cloud-local';
-  document.getElementById('cloudStatus').innerText = '🔒 本地安全存储';
+  setCloudBadgeState('error', '⚠️ 云端初始化失败');
 }
 
 const todayStr = new Date().toISOString().split('T')[0];
@@ -2500,15 +2536,47 @@ function redeemReward(idx) {
   }
 }
 
+function forceSyncStarsNow() {
+  if (!sharedStarsRef) {
+    alert("⚠️ 云端数据库未初始化，请检查网络后刷新页面。");
+    return;
+  }
+  if (typeof zhStore.stars === 'number') {
+    setCloudBadgeState('syncing', '☁️ 正在上传星星...');
+    sharedStarsRef.set(Math.round(zhStore.stars * 10) / 10).then(() => {
+      setCloudBadgeState('live', '☁️ 云端已同步');
+      alert(`✅ 已将当前星星（${zhStore.stars} ⭐）同步到云端！英文端刷新后即可看到。`);
+    }).catch((err) => {
+      setCloudBadgeState('error', '⚠️ 同步失败');
+      alert("❌ 云端同步失败：" + (err && err.message ? err.message : '网络或权限受限'));
+    });
+  } else {
+    alert("⏳ 正在从云端读取最新星星数，请稍等 1~2 秒再试。");
+  }
+}
+
 function parentAdjustStars() {
   const pwd = prompt("请输入家长管理密码（默认 1234）：", "");
   if (pwd === "1234") {
-    const val = prompt(`当前云端星星总数：${zhStore.stars} ⭐\n请输入修改后的新星星数：`, zhStore.stars);
-    if (val !== null && !isNaN(val)) {
-      zhStore.stars = Math.round(parseFloat(val) * 10) / 10;
-      syncAll();
+    const cur = (typeof zhStore.stars === 'number') ? zhStore.stars : 0;
+    const val = prompt(`当前云端星星总数：${cur} ⭐\n请输入修改后的新星星数：`, cur);
+    if (val !== null && !isNaN(val) && val.trim() !== "") {
+      const cleanVal = Math.round(parseFloat(val) * 10) / 10;
+      zhStore.stars = cleanVal;
+      saveLocal();
       updateDashboard();
-      alert("✅ 星星数量已更新并同步至云端！");
+      if (sharedStarsRef) {
+        setCloudBadgeState('syncing', '☁️ 正在同步云端...');
+        sharedStarsRef.set(cleanVal).then(() => {
+          setCloudBadgeState('live', '☁️ 云端已同步');
+          alert(`✅ 星星数量已更新为 ${cleanVal} ⭐ 并成功写入云端！`);
+        }).catch((err) => {
+          setCloudBadgeState('error', '⚠️ 云端写入失败');
+          alert("❌ 本地已改，但写入云端失败：" + (err && err.message ? err.message : '权限或网络错误'));
+        });
+      } else {
+        alert("⚠️ 云端引用为空，仅保存到本地。");
+      }
     }
   } else if (pwd !== null) {
     alert("密码错误！");
