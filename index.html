@@ -328,7 +328,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 <div id="s4StudyPhase">
 <div style="background:#fef3c7; border:1.5px solid #fcd34d; border-radius:12px; padding:10px 12px; font-size:12.5px; color:#92400e; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
 <span>🧠 <strong>高效记忆四步法：</strong>① 看💡<strong>字理口诀</strong> → ② 点<strong>✍️ 指写描红</strong>练笔画 → ③ 点<strong>🙈 遮字过电影</strong>自测 → ④ 开始纸笔/屏幕听写！</span>
-<button onclick="buildStage4Queue()" style="font-size:11.5px; font-weight:800; background:#fff; color:#b45309; border:1px solid #f59e0b; border-radius:8px; padding:4px 10px; cursor:pointer;">🔄 换5个词</button>
+<button onclick="buildStage4Queue(true)" style="font-size:11.5px; font-weight:800; background:#fff; color:#b45309; border:1px solid #f59e0b; border-radius:8px; padding:4px 10px; cursor:pointer;">⏭️ 下一组5词（按总表顺序）</button>
 </div>
 
 <!-- 互动田字格指写描红抽屉（点击任意词的“✍️ 指写描红”展开） -->
@@ -1603,25 +1603,53 @@ function getFilteredStage4Pool() {
   return pool;
 }
 
-function buildStage4Queue() {
-  const filterVal = document.getElementById('s4CatFilter').value;
-  const pool = getFilteredStage4Pool();
-  const wrongFirst = pool.filter(d => zhStore.dictWrongList.includes(d.w));
-  const dueUnmastered = pool.filter(d => {
-    if (zhStore.dictWrongList.includes(d.w)) return false;
-    const dp = zhStore.dictProgress[d.w];
-    return !dp || !dp.nextDue || dp.nextDue <= todayStr;
-  });
-  const rest = pool.filter(d => !wrongFirst.includes(d) && !dueUnmastered.includes(d));
+let s4SeqCursor = 0;
+let s4LastFilterKey = '';
 
-  if (filterVal !== 'ALL' && filterVal !== 'WRONG') {
-    // 按短文故事顺序依次练习，方便孩子结合上下句理解
-    s4Queue = [...wrongFirst, ...dueUnmastered, ...rest].slice(0, 5);
+function buildStage4Queue(advanceNextBatch) {
+  const filterVal = document.getElementById('s4CatFilter').value;
+  const filterKey = currentScope + '::' + filterVal;
+  const pool = getFilteredStage4Pool();
+  if (pool.length === 0) {
+    s4Queue = [];
+    s4Idx = 0;
+    renderStage4StudyList();
+    return;
+  }
+
+  // Attach original table index (`_tableIdx`) so parents can easily locate every word in the master table
+  const indexedPool = pool.map((item, idx) => ({ ...item, _tableIdx: idx + 1 }));
+
+  if (filterKey !== s4LastFilterKey) {
+    s4LastFilterKey = filterKey;
+    // Automatically start from the first uncompleted word in exact master table order
+    const firstUnfinished = indexedPool.findIndex(item => {
+      const dp = zhStore.dictProgress[item.w];
+      const isWrong = (zhStore.dictWrongList || []).includes(item.w);
+      const isDone = ((zhStore.dictMasteredList || []).includes(item.w) || (dp && (dp.streak || 0) >= 1)) && !isWrong;
+      return !isDone;
+    });
+    s4SeqCursor = firstUnfinished >= 0 ? firstUnfinished : 0;
+  } else if (advanceNextBatch === true) {
+    s4SeqCursor = (s4SeqCursor + 5) % indexedPool.length;
   } else {
-    s4Queue = [...shuffle(wrongFirst), ...shuffle(dueUnmastered), ...shuffle(rest)].slice(0, 5);
+    if (s4SeqCursor >= indexedPool.length) s4SeqCursor = 0;
+  }
+
+  // Strictly slice 5 consecutive words in exact master table order (no random shuffling!)
+  s4Queue = indexedPool.slice(s4SeqCursor, s4SeqCursor + 5);
+  if (s4Queue.length < 5 && indexedPool.length > 5) {
+    s4Queue = [...s4Queue, ...indexedPool.slice(0, 5 - s4Queue.length)];
   }
   s4Idx = 0;
   renderStage4StudyList();
+}
+
+function jumpToDictTableIndex(zeroBasedIdx) {
+  const pool = getFilteredStage4Pool();
+  if (pool.length === 0) return;
+  s4SeqCursor = Math.max(0, Math.min(zeroBasedIdx, pool.length - 1));
+  buildStage4Queue(false);
 }
 
 const DICT_MNEMONIC_MAP = {"值日": "【值】像一个人（亻）站得笔直（直），今天轮到我站出来值日啦！", "负责任": "【负】像一个人背着宝贝（贝）；【责】上面三横一竖，下面也是宝贝（贝），答应的事要背到底！", "整理": "【整】左边一捆书（束）加小手（攵），下面一个“正”，把书摆得端端正正！", "课室": "【室】上面屋顶（宀），下面到了（至），大家来到屋子里上课就是课室！", "干净": "【净】两点冰水（冫）冲一冲，变得干干净净！", "食堂排队": "【排】用手（扌）排成两排（非）；【队】耳朵旁（阝）加一个人（人），大家排成一队！", "占位子": "【占】上面一竖一横像小旗子，插在座位（口）上占位置！", "插队": "【插】伸出手（扌），把一根千字棒（千）插进小窝（臼）里！", "提醒": "【醒】左边小酒瓶（酉，别漏里面一横！），右边一颗星星（星），天亮看到星星就睡醒啦！", "注意": "【注】三滴水（氵）点在主（主）人公身上；【意】立+日+心，心里特别留意！", "秩序": "【秩】禾苗（禾）排排站，不能走失（失）；【序】房子（广）里按顺序排队！", "显得难为情": "【显】太阳（日）照在树叶（业）上，看得清清楚楚；【难】左边又，右边四横小鸟（隹）！", "低着头保证下次一定改正": "【保】人（亻）靠着木头（呆）很安全；【证】说话（讠）要端正（正），说话算数！", "表扬": "【扬】挥动小手（扌），大声把好消息传扬出去！", "优秀": "【优】人（亻）加上“尤”（千万别漏右上角的小点点！）；【秀】禾苗（禾）弯弯腰真秀气！", "鼓励": "【鼓】左边像一面小鼓（壴），右边拿着鼓槌（支）咚咚敲，加油鼓劲！", "更加丰富有趣": "【丰】三横一竖像丰收的庄稼；【富】屋顶（宀）下有一口田，真富有！", "玩耍": "【耍】上面是“而”，下面是女孩（女），小女孩开心地玩耍！", "乐曲": "【曲】两根琴弦竖起来，弹奏出美妙的乐曲！", "举起发令枪": "【举】上面三点水花，下面两只手托起来；【令】别漏最后一点；【枪】木头（木）做的发令枪！", "挥动": "【挥】伸出手（扌）指挥军队（军）向前冲！", "立刻向终点": "【刻】右边一把立刀（刂），像刀切一样立刻行动；【终】绞丝旁加冬天（冬），一年走到头就是终点！", "奔跑": "【奔】上面一个“大”人张开双臂，迈开大步向前奔跑！", "不顾一切地向前冲": "【冲】两点冷水（冫）加中间（中），像水一样猛冲过去！", "紧张": "【紧】下面一条丝线（糸）拉得紧紧的，心里好紧张！", "到达": "【达】走之底（辶）像一条小船，载着“大”人顺利到达！", "取得": "【取】左边耳朵（耳）右边手（又），伸手把奖杯拿过来！", "奖杯": "【奖】下面一个“大”字；【杯】木头（木）做的杯子，喝水不用愁（不）！", "纷纷围了过去": "【围】一个大大的方框（囗），把里面的“韦”紧紧围在中间！", "微笑着握手": "【握】伸出手（扌）来到屋子（屋）里，友好地握握手！", "车厢": "【厢】厂字头（厂）像车顶，里面装着木和目（相），就是火车车厢！", "乘客": "【乘】一个人站在大树上（禾+北），准备搭车出发！", "摇摆": "【摆】伸出手（扌），把东西摆得整整齐齐！", "洒了": "【洒】三滴水（氵）洒在西边（西），注意里面没有横（有横就是喝酒的酒）！", "弄湿": "【湿】三滴水（氵）滴在太阳（日）下，衣服弄湿啦！", "清洁工人": "【洁】三滴水（氵）加“吉”（上面是士，上横长下横短），用水洗得真洁净！", "劝告": "【劝】左边“又”右边“力”，用嘴和力气好好劝说！", "推开清洁工人": "【推】伸出手（扌），把四横小鸟（隹）轻轻推开！", "不耐烦地": "【烦】火字旁（火）加头（页），头上冒火就是心烦啦！", "大声地喊": "【喊】张大嘴巴（口），发出响亮的喊声！", "无礼": "【礼】示字旁（礻，只有一点！）加竖弯钩，有礼貌送祝福，千万别写成两点衣字旁！", "批评": "【批】伸出手（扌）比一比（比）；【评】说话（讠）来评理！", "道歉": "【道】走之底（辶）加脑袋（首）；【歉】左边“兼”右边打哈欠（欠），低头认错说抱歉！", "展览": "【展】尸字头里草木（廿）展开；【览】下面一个“见”，走进去看展览！", "纪念品": "【纪】绞丝旁加“己”（不出头）；【念】今天（今，无点）放在心（心）上就是想念！", "饮料": "【饮】左边食字旁（饣），右边张大嘴（欠）喝饮料！", "打鼓": "【鼓】左边小鼓架，右边小手拿鼓槌（支）敲鼓！", "舞蹈": "【舞】中间四根柱子，下面两只脚在舞台上跳舞！", "吸引": "【吸】张开嘴巴（口）吸一口气；【引】拉开弓箭（弓）把人吸引过来！", "度过充实的一天": "【充】点横头加“允”，装得满满当当就是充实！", "打破": "【破】石头（石）砸在皮（皮）上，一下子打破啦！", "最喜欢": "【最】上面太阳（日），下面耳朵（耳）和手（又），拿第一名最开心！", "花盆": "【盆】上面“分”，下面器皿（皿），用来装泥土种花的盆子！", "九牛二虎之力": "【虎】虎字头（虍）加“几”，九头牛加两只老虎，力气大得不得了！", "焦急": "【焦】上面一只小鸟（隹），下面四点大火（灬）在烤，急得像热锅上的蚂蚁！", "担心": "【担】用手（扌）挑起太阳（旦），心里好担心！", "赶紧": "【赶】走起来（走）干活（干），动作真麻利！", "拆开": "【拆】伸出手（扌）把“斥”拆开（千万别漏右边的小点点，漏了就变斤啦）！", "宝贝": "【宝】屋顶（宀）下藏着一块美玉（玉，别漏点），真是大宝贝！", "怒气冲冲": "【怒】上面一个“奴”，下面一颗“心”，心被气炸了就是发怒！", "不肯": "【肯】上面脚印（止），下面月亮（月，撇变竖），点点头答应就是肯！", "理睬": "【睬】用眼睛（目）看一看（采），搭理别人就是理睬！", "摸着": "【摸】伸出手（扌）在草丛（莫）里轻轻摸一摸！", "自言自语": "【语】说话（讠）用五张嘴（吾），自己跟自己说话！", "承认": "【承】中间三横像台阶，双手托起；【认】说话（讠）认错！", "错误": "【错】金字旁（钅）加“昔”；【误】说话（讠）说错了（吴），就是失误！", "心里很后悔": "【悔】竖心旁（忄）加“每”，心里每天都在后悔！", "知错能改": "【改】左边“己”（不出头），右边反文旁（攵），用小鞭子督促自己改错！", "温暖": "【暖】太阳公公（日）照在朋友（爰）身上，暖洋洋的（别写成爱字哦）！", "街上": "【街】双人旁（彳）中间两个土（圭），走在热闹的大街上！", "交通规则": "【规】左边“夫”右边“见”；【则】左边宝贝（贝）右边立刀（刂），规则像刀一样严格！", "不能乱抢": "【抢】伸出手（扌）去抢仓库（仓）里的东西，太不礼貌啦！", "车祸": "【祸】示字旁（礻，只有一点！）加“呙”，发生车祸真可怕！", "司机被困在车里": "【困】一棵木头（木）被四面墙壁（囗）关在里面，动弹不得！", "流血": "【血】一撇加器皿（皿），像一滴血滴进碗里！", "警察": "【警】上面“敬”下面说话（言）；【察】屋顶（宀）下仔细观察！", "见义勇为": "【义】先写上面一点，再写撇和捺；【勇】上面“甬”下面“力”，有力气就勇敢！", "拼命": "【拼】伸出双手（扌）把两块拼图并（并）在一起！", "顺利救出": "【顺】三条河流（川）流向前面（页），一路顺风；【救】左边“求”（别漏右上点）右边反文旁！", "幸运": "【幸】上面是泥土（土），下面是“￥”（区别于辛苦的“辛”上面是“立”）！", "最近沉迷玩游戏": "【迷】走之底（辶）加米粒（米），走丢了方向就是入迷！", "经常": "【常】尚字头加秃宝盖，下面一个“巾”，经常戴在身上！", "半夜": "【夜】点横头下有单人（亻）和夕阳（夕），夕阳西下就是夜晚！", "舍不得睁开眼": "【睁】眼睛（目）用力争（争）着张开！", "结果视力变差": "【差】羊字头（撇出头）加“工”，没做好就变差啦！", "戴眼镜": "【戴】左边田和共，右边大斜钩，帽子眼镜都要“戴”在头上！", "生病": "【病】病字旁（疒）像一张小床，里面一个“丙”，生病躺在床上！", "打针": "【针】金属（钅）做的细针，像个“十”字一样细！", "吃药": "【药】草字头（艹）下用绳子（约）捆住草药！", "胆小": "【胆】月字旁加太阳（旦），胆子大才敢晒太阳！", "很痛": "【痛】病字旁（疒）像小床，躺在床上喊好痛！", "闷闷不乐": "【闷】门框（门）里关着一颗心（心），心被关在门里当然不开心！", "流下了眼泪": "【泪】三滴水（氵）从眼睛（目）里流出来，就是眼泪！", "阿姨耐心": "【耐】左边“而”右边“寸”，一寸一寸慢慢等就是耐心！", "骗人": "【骗】马字旁（马）加“扁”，骑着马到处吹牛骗人！", "闭上眼": "【闭】门框（门）里站着一个“才”，把门紧紧关上！", "勇敢": "【敢】右边反文旁（攵），敢于面对困难！", "伸出手": "【伸】一个人（亻）把身体拉长（申），伸出援手！", "结束": "【束】一棵木头（木）中间用绳子（口）捆成一束！", "炎热": "【炎】两个火（火+火）叠在一起，火上加火热得冒汗！", "变得比较凉爽": "【爽】一个“大”字左右各背着两个叉（乂），吹风真凉爽！", "舒服": "【舒】左边“舍”右边“予”（没有撇），住得真舒服！", "天空乌云密布": "【乌】比小鸟（鸟）少一点（乌鸦全黑看不见眼睛）；【密】屋顶下必有山！", "紧接着": "【接】伸出手（扌）把东西接过来！", "倾盆大雨": "【倾】人（亻）歪着身子倒水；【盆】分+皿，像用大盆往下泼雨！", "长得丑": "【丑】横折、竖、横、横，像个扭来扭去的小丑！", "挂在树上": "【挂】伸出手（扌），把画挂在两层土墙（圭）上！", "惊奇": "【惊】竖心旁（忄）加北京（京），心里吓了一跳！", "蹲下": "【蹲】用脚（足）蹲在地上（尊）！", "侧着身体": "【侧】一个人（亻）站在规则（则）旁边！", "手臂": "【臂】上面“辟”下面月亮（月），抬起你的手臂！", "不慌不忙": "【慌】竖心旁（忄）加荒野（荒，中间亡无点），心里不慌张！", "尊敬长辈": "【尊】上两点一横+酋+寸；【敬】左苟右反文；【辈】上非下车，尊敬老人！", "挑选": "【挑】伸出手（扌）挑一挑；【选】走之底（辶）加“先”！", "苹果递给": "【递】走之底（辶）加弟弟（弟），把苹果递给长辈！", "分享": "【享】点横头+口+子，好东西大家一起分享！", "保持健康": "【健】人（亻）建（建）起强壮的身体；【康】广字头里非常健康！", "秘密": "【秘】禾苗（禾）加“必”，藏在庄稼里的秘密！", "保持安静": "【静】左边青色（青），右边争气（争），安安静静不吵闹！", "由于": "【由】“田”字中间一竖向上出头！", "补习": "【补】衣字旁（衤，两点！）加“卜”，用布料补衣服！", "吵闹": "【吵】张开嘴巴（口）少说话（少），不然太吵啦！", "影响": "【影】左边太阳景（景），右边三撇（彡）像阳光照出的影子！", "可怜": "【怜】竖心旁（忄）加命令（令，别漏最后一点），心里好同情！", "穷人老婆婆": "【穷】洞穴（穴）里只剩一把力气（力），家里好穷！", "压着": "【压】厂字头（厂）下面一块泥土（土）加一点，重重压下来！", "竟然": "【竟】立+日+儿，居然发生这么意外的事！", "打骂": "【骂】上面两张大嘴巴（口口），下面一匹马（马），大声责骂！", "凶巴巴": "【凶】一个大坑（凵）里放个叉（乂），凶恶的陷阱！", "立刻": "【立】一点一横，点撇一横，像人站立在地上！", "帮忙": "【帮】上面“邦”下面毛巾（巾），拿毛巾帮妈妈擦汗！", "挤在一起": "【挤】伸出手（扌）和大家对齐（齐），挤在一块儿！", "靠着": "【靠】上面“告”（竖不出头），下面“非”，背靠背休息！", "怕冷": "【冷】两点冰水（冫）加“令”，冰水滴在身上好冷呀！", "好久不见": "【久】撇、横撇、捺，三笔写成，时间过得好久！", "讨论": "【讨】说话（讠）有分寸（寸）；【论】说话（讠）讲道理（仑）！", "表示非常欢迎": "【迎】走之底（辶）包住“卬”（中间没有点！），出门迎接好朋友！", "皱着眉头": "【皱】右边一张皮（皮），眉头挤在一起起皱纹啦！", "词典": "【词】说话（讠）用词语（司）；【典】厚厚的一本经典字典！", "难题": "【题】“是”的最后一笔拉长，托住右边的“页”！", "忽然灵机一动": "【灵】上面倒山（彐），下面一把火（火），脑筋像火苗一样灵活！", "告示牌": "【牌】左边片字旁（片），右边“卑”（一撇穿过白），门上的指示牌！", "清楚": "【楚】上面两棵树（林），下面一双脚（疋），看得清清楚楚！", "说了好几遍": "【遍】走之底（辶）加“扁”，走了一遍又一遍！", "必须": "【必】心字中间插一长撇；【须】左边三撇（彡）右边“页”，一定要做到！", "功夫": "【夫】“天”字一撇向上出头，下苦功夫练武术！", "既然": "【既】左边“艮”末笔变提，右边竖弯钩（旡），既然答应就要做到！", "团队": "【团】一个大框框（囗）里站着“才”子，大家团结在一起！", "训练": "【练】绞丝旁（纟）加“东”少两点（里面没有两点哦）！", "所以": "【所】左边“户”右边“斤”；【以】竖提、点、撇、点！", "辛苦": "【辛】上面“立”下面“十”（区别于幸福的“幸”上面是土）！", "继续": "【继】绞丝旁加“米”；【续】绞丝旁加“卖”，一根接一根继续连起来！", "忍不住": "【忍】上面一把带点的刀（刃），下面一颗心（心），心头一把刀也要忍住！", "火冒三丈": "【冒】上面扁扁的“曰”（两横不连右边），下面“目”，气得头上冒出三把大火！", "惭愧地低下头": "【惭】竖心旁加斩；【愧】竖心旁加鬼，心里觉得真丢脸！", "踏着轻快的脚步": "【踏】用脚（足）踩在水和太阳上，脚步轻快极了！", "脸色苍白": "【苍】草字头下“仓”，吓得脸像白纸一样没有血色！", "愁眉苦脸": "【愁】秋天（秋）放在心（心）上，心里好发愁！", "满头大汗": "【汗】三滴水（氵）加“干”，热得满头流汗水！", "跌坐在地上": "【跌】用脚（足）走路失（失）去平衡，跌倒在地！", "跌了个四脚朝天": "【朝】十+日+十+月，四只脚朝天摔了个大跟头！", "竖起大拇指": "【竖】下面站立（立）；【拇】伸出手（扌）指着妈妈（母），大拇指最棒！", "吃得津津有味": "【津】三滴水（氵）加笔（聿），好吃得直咽口水！", "头冒冷汗": "【冒】上“曰”下“目”，紧张得额头直冒冷汗水！", "不知所措": "【措】伸出手（扌）不知道往哪里放（昔），急得手足无措！", "严厉": "【厉】厂字头（厂）里面一个“万”，爸爸批评人很严厉（历史的历里面是力）！", "分辨": "【辨】中间是“点、撇”（用眼睛看清分辨；如果是“争辩”中间就是言字旁哦）！", "急躁": "【躁】用脚（足）急得直跺脚（干燥的燥用火，噪音的噪用口）！", "发扬": "【扬】伸出手（扌）把好传统发扬光大（发挥水平用“挥”）！", "应接不暇": "【暇】左边是太阳（日），有时间才有空闲（瑕疵的瑕是王字旁）！", "维护": "【维】绞丝旁加“隹”；【护】伸出手（扌）保护（维护秩序、爱护公物）！", "缺乏": "【乏】一撇加“之”，缺少锻炼就容易累！"};
@@ -1835,7 +1863,7 @@ function renderStage4StudyList() {
         <div id="studyKaiti_${idx}" data-masked="0" class="dict-kaiti" onclick="speakChinese(&quot;${item.w}。${cleanSent}&quot;)" style="cursor:pointer;" title="点击听发音">${item.w}</div>
         <div style="flex:1; min-width:180px;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
-            <span style="font-size:18px; font-weight:800; color:#0284c7;">${item.py}</span>
+            <span style="font-size:18px; font-weight:800; color:#0284c7;"><span style="font-size:12px; background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:6px; margin-right:6px;">总表第 ${item._tableIdx || (idx + 1)} 词</span>${item.py}</span>
             ${badge}
           </div>
           <div class="sentence-display" style="margin-top:6px; color:#1e293b;">${item.sent}</div>
@@ -1952,6 +1980,7 @@ function renderDictTrackerPanel() {
 
   let html = '';
   filtered.forEach(item => {
+    const origIdx = pool.findIndex(x => x.w === item.w);
     const st = getDictWordStatus(item.w);
     const dp = zhStore.dictProgress[item.w];
     const nextDue = dp && dp.nextDue ? ` · 下次复习: ${dp.nextDue}` : '';
@@ -1959,14 +1988,16 @@ function renderDictTrackerPanel() {
     html += `<div style="background:${st.bg}; border:1.5px solid ${st.border}; border-radius:14px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
       <div style="flex:1; min-width:170px;">
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <span style="font-size:11.5px; font-weight:800; background:#e2e8f0; color:#334155; padding:2px 6px; border-radius:6px;">#${origIdx + 1}</span>
           <span style="font-size:24px; font-weight:700; font-family:var(--kaiti-font); color:#0f172a;">${item.w}</span>
           <span style="font-size:13px; font-weight:800; color:#0284c7;">${item.py}</span>
           <span style="font-size:11px; font-weight:800; background:#fff; color:${st.color}; border:1px solid ${st.border}; padding:2px 7px; border-radius:6px;">${st.label}${nextDue}</span>
         </div>
         <div style="font-size:14px; color:#334155; margin-top:4px; font-family:var(--kaiti-font);">${item.sent}</div>
       </div>
-      <div style="display:flex; gap:6px; align-items:center;">
+      <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
         <button class="audio-btn" onclick="speakChinese(&quot;${item.w}。${cleanSent}&quot;)">🔊 朗读</button>
+        <button class="audio-btn" style="background:#fef3c7; color:#b45309; border-color:#fcd34d;" onclick="jumpToDictTableIndex(${origIdx})">🎯 从此词开始</button>
         <button class="audio-btn" style="background:#fff; color:#581c87; border-color:#d8b4fe;" onclick="inspectDictAnyWord(&quot;${item.w}&quot;)">⚙️ 状态</button>
       </div>
     </div>`;
