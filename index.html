@@ -319,6 +319,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 <option value="WRONG">📌 听写错词本重练</option>
 </select>
 <button onclick="startBedtimeMovieMode()" style="font-size:11.5px; font-weight:800; background:#1e1b4b; color:#fde047; border:1px solid #4338ca; border-radius:8px; padding:4px 9px; cursor:pointer;">🌙 睡前过电影</button>
+<button onclick="openDictTrackerPhase()" style="font-size:11.5px; font-weight:800; background:#dcfce7; color:#15803d; border:1px solid #86efac; border-radius:8px; padding:4px 9px; cursor:pointer;">📊 听写总汇</button>
 <button onclick="toggleStage4FullBank()" style="font-size:11.5px; font-weight:800; background:#f3e8ff; color:#6b21a8; border:1px solid #d8b4fe; border-radius:8px; padding:4px 9px; cursor:pointer;">📚 全表</button>
 </div>
 </div>
@@ -357,6 +358,26 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 <button onclick="toggleStage4FullBank()" style="font-size:12px; font-weight:800; background:#e2e8f0; border:none; border-radius:8px; padding:5px 12px; cursor:pointer;">返回5词学习 ✕</button>
 </div>
 <div id="s4FullBankList" style="max-height:460px; overflow-y:auto; padding-right:4px;"></div>
+</div>
+
+<!-- 2D. 听写总汇追踪看板（清楚追踪每个词语/短语的听写状态：错词需重练 / 短期已写对(1-3阶) / 长期已巩固(4阶) / 尚未听写） -->
+<div id="s4TrackerPhase" style="display:none;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:6px;">
+    <strong style="font-size:15px; color:#581c87;">📊 词库听写总汇与长期记忆追踪表</strong>
+    <button onclick="backToStage4Study()" style="font-size:12px; font-weight:800; background:#e2e8f0; border:none; border-radius:8px; padding:5px 12px; cursor:pointer;">返回5词学习 ✕</button>
+  </div>
+  <div id="s4TrackerStatsBar" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; margin-bottom:10px; text-align:center;"></div>
+  <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
+    <select id="s4TrackerStatusFilter" onchange="renderDictTrackerPanel()" style="flex:1; min-width:130px; font-size:12.5px; font-weight:800; padding:7px 10px; border-radius:10px; border:1.5px solid #d8b4fe; color:#581c87; background:#faf5ff;">
+      <option value="ALL">📋 全部听写词语/短语</option>
+      <option value="WRONG">❌ 听写错词（需重点重练）</option>
+      <option value="IN_PROGRESS">⏳ 已写对 1~3 次（短期记忆巩固中）</option>
+      <option value="MASTERED">🏆 已写对满 4 次（长期记忆已稳固）</option>
+      <option value="TODO">🆕 尚未听写的新词</option>
+    </select>
+    <input id="s4TrackerSearch" type="text" oninput="renderDictTrackerPanel()" placeholder="🔍 搜索词语/短语..." style="flex:1; min-width:120px; padding:7px 10px; border:1.5px solid #cbd5e1; border-radius:10px; font-size:12.5px;" />
+  </div>
+  <div id="s4TrackerListContainer" style="max-height:480px; overflow-y:auto; padding-right:2px;"></div>
 </div>
 
 <!-- 2C. 正式听写测试区（支持纸笔默写 OR 直接在屏幕手写板默写，核对时左右对照楷体答案！） -->
@@ -462,10 +483,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 <div id="bankContainer" style="min-height:80px; margin-bottom:14px;"></div>
 
 <div style="border-top:1.5px dashed #fecdd3; padding-top:12px;">
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-<strong style="font-size:14.5px; color:#6b21a8;">✍️ 听写错词本（点击朗读/手动销号）</strong>
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+<strong style="font-size:14.5px; color:#6b21a8;">✍️ 听写追踪总汇（错词本 + 已写对巩固词）</strong>
+<div style="display:flex; align-items:center; gap:6px;">
 <span id="dictBankBadge" style="font-size:12px; font-weight:800; background:#f3e8ff; color:#7e22ce; padding:3px 9px; border-radius:8px;">0 词</span>
+<button onclick="switchMode('dict'); openDictTrackerPhase();" style="font-size:11.5px; font-weight:800; background:#7e22ce; color:#fff; border:none; border-radius:8px; padding:4px 9px; cursor:pointer;">查看全部词库总表 →</button>
 </div>
+</div>
+<p style="font-size:12px; color:#64748b; margin-top:0; margin-bottom:8px;">💡 点击任意词语可朗读、查看记忆阶梯（1~4阶）或手动调整状态。</p>
 <div id="dictBankContainer" style="min-height:60px;"></div>
 </div>
 </div>
@@ -1785,6 +1810,7 @@ function renderStage4StudyList() {
   document.getElementById('s4StudyPhase').style.display = 'block';
   document.getElementById('s4FullBankPhase').style.display = 'none';
   document.getElementById('s4TestPhase').style.display = 'none';
+  if (document.getElementById('s4TrackerPhase')) document.getElementById('s4TrackerPhase').style.display = 'none';
   closeDictTracePad();
 
   const container = document.getElementById('s4StudyListContainer');
@@ -1834,6 +1860,7 @@ function toggleStage4FullBank() {
   if (fullBox.style.display === 'none') {
     studyBox.style.display = 'none';
     testBox.style.display = 'none';
+    if (document.getElementById('s4TrackerPhase')) document.getElementById('s4TrackerPhase').style.display = 'none';
     fullBox.style.display = 'block';
     const pool = getFilteredStage4Pool();
     let html = '';
@@ -1855,10 +1882,141 @@ function toggleStage4FullBank() {
   }
 }
 
+
+function openDictTrackerPhase() {
+  document.getElementById('s4StudyPhase').style.display = 'none';
+  document.getElementById('s4FullBankPhase').style.display = 'none';
+  document.getElementById('s4TestPhase').style.display = 'none';
+  document.getElementById('s4TrackerPhase').style.display = 'block';
+  renderDictTrackerPanel();
+}
+
+function getDictWordStatus(w) {
+  const dp = zhStore.dictProgress[w];
+  const streak = dp ? (dp.streak || 0) : 0;
+  const isWrong = (zhStore.dictWrongList || []).includes(w);
+  const isMastered = (zhStore.dictMasteredList || []).includes(w) || streak >= 1;
+  if (isWrong) return { code: 'WRONG', streak, label: '❌ 错词待重练', bg: '#fff1f2', border: '#fda4af', color: '#be123c' };
+  if (streak >= 4) return { code: 'MASTERED', streak, label: '🏆 满4阶长期巩固', bg: '#ecfdf5', border: '#6ee7b7', color: '#047857' };
+  if (isMastered) return { code: 'IN_PROGRESS', streak: Math.max(1, streak), label: `✅ 已写对 (${Math.max(1, streak)}/4阶)`, bg: '#eff6ff', border: '#93c5fd', color: '#1d4ed8' };
+  return { code: 'TODO', streak: 0, label: '🆕 尚未听写', bg: '#f8fafc', border: '#cbd5e1', color: '#64748b' };
+}
+
+function renderDictTrackerPanel() {
+  const pool = getFilteredStage4Pool();
+  const statsBar = document.getElementById('s4TrackerStatsBar');
+  const listBox = document.getElementById('s4TrackerListContainer');
+  if (!statsBar || !listBox) return;
+
+  let wrongCnt = 0, inProgCnt = 0, masteredCnt = 0, todoCnt = 0;
+  pool.forEach(item => {
+    const st = getDictWordStatus(item.w);
+    if (st.code === 'WRONG') wrongCnt++;
+    else if (st.code === 'MASTERED') masteredCnt++;
+    else if (st.code === 'IN_PROGRESS') inProgCnt++;
+    else todoCnt++;
+  });
+
+  statsBar.innerHTML = `
+    <div style="background:#fff1f2; border:1px solid #fecdd3; border-radius:10px; padding:6px 4px;">
+      <div style="font-size:15px; font-weight:900; color:#be123c;">${wrongCnt}</div>
+      <div style="font-size:10.5px; font-weight:700; color:#9f1239;">❌ 错词重练</div>
+    </div>
+    <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; padding:6px 4px;">
+      <div style="font-size:15px; font-weight:900; color:#1d4ed8;">${inProgCnt}</div>
+      <div style="font-size:10.5px; font-weight:700; color:#1e40af;">⏳ 1~3阶巩固</div>
+    </div>
+    <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; padding:6px 4px;">
+      <div style="font-size:15px; font-weight:900; color:#047857;">${masteredCnt}</div>
+      <div style="font-size:10.5px; font-weight:700; color:#065f46;">🏆 4阶长期稳固</div>
+    </div>
+    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:6px 4px;">
+      <div style="font-size:15px; font-weight:900; color:#475569;">${todoCnt}</div>
+      <div style="font-size:10.5px; font-weight:700; color:#64748b;">🆕 尚未听写</div>
+    </div>
+  `;
+
+  const statusFilter = document.getElementById('s4TrackerStatusFilter').value;
+  const kw = (document.getElementById('s4TrackerSearch').value || '').trim();
+  const filtered = pool.filter(item => {
+    const st = getDictWordStatus(item.w);
+    if (statusFilter !== 'ALL' && st.code !== statusFilter) return false;
+    if (kw && !item.w.includes(kw) && !item.sent.includes(kw) && !item.py.includes(kw)) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    listBox.innerHTML = '<p style="text-align:center; color:#94a3b8; padding:24px 0;">当前筛选条件下暂无听写词语</p>';
+    return;
+  }
+
+  let html = '';
+  filtered.forEach(item => {
+    const st = getDictWordStatus(item.w);
+    const dp = zhStore.dictProgress[item.w];
+    const nextDue = dp && dp.nextDue ? ` · 下次复习: ${dp.nextDue}` : '';
+    const cleanSent = item.sent.split('【')[0].replace(/[（）]/g, '');
+    html += `<div style="background:${st.bg}; border:1.5px solid ${st.border}; border-radius:14px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:170px;">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <span style="font-size:24px; font-weight:700; font-family:var(--kaiti-font); color:#0f172a;">${item.w}</span>
+          <span style="font-size:13px; font-weight:800; color:#0284c7;">${item.py}</span>
+          <span style="font-size:11px; font-weight:800; background:#fff; color:${st.color}; border:1px solid ${st.border}; padding:2px 7px; border-radius:6px;">${st.label}${nextDue}</span>
+        </div>
+        <div style="font-size:14px; color:#334155; margin-top:4px; font-family:var(--kaiti-font);">${item.sent}</div>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <button class="audio-btn" onclick="speakChinese(&quot;${item.w}。${cleanSent}&quot;)">🔊 朗读</button>
+        <button class="audio-btn" style="background:#fff; color:#581c87; border-color:#d8b4fe;" onclick="inspectDictAnyWord(&quot;${item.w}&quot;)">⚙️ 状态</button>
+      </div>
+    </div>`;
+  });
+  listBox.innerHTML = html;
+}
+
+function inspectDictAnyWord(w) {
+  const dItem = DICTATION_DB.find(x => x.w === w);
+  if (!dItem) return;
+  const st = getDictWordStatus(w);
+  speakChinese(`${dItem.w}`);
+  if (st.code === 'WRONG' || st.code === 'TODO') {
+    if (confirm(`【${dItem.w}】(${dItem.py})
+当前状态：${st.label}
+例句：${dItem.sent}
+
+是否将其标记为【✅ 已完成听写（推进记忆阶梯）】？`)) {
+      zhStore.dictWrongList = zhStore.dictWrongList.filter(x => x !== w);
+      if (!zhStore.dictMasteredList.includes(w)) zhStore.dictMasteredList.push(w);
+      if (!zhStore.dictProgress[w]) zhStore.dictProgress[w] = { streak: 0, mistakes: 0, nextDue: todayStr };
+      zhStore.dictProgress[w].streak = Math.min(4, (zhStore.dictProgress[w].streak || 0) + 1);
+      const interval = EBBINGHAUS_DAYS[Math.min(zhStore.dictProgress[w].streak - 1, 3)];
+      zhStore.dictProgress[w].nextDue = new Date(Date.now() + interval * 86400000).toISOString().split('T')[0];
+      syncAll();
+      updateDashboard();
+      renderDictTrackerPanel();
+      if (currentMode === 'hub') renderBank();
+    }
+  } else {
+    if (confirm(`【${dItem.w}】(${dItem.py})
+当前状态：${st.label}
+例句：${dItem.sent}
+
+是否将其重置并加入【❌ 听写错词本】重新听写？`)) {
+      if (!zhStore.dictWrongList.includes(w)) zhStore.dictWrongList.push(w);
+      zhStore.dictProgress[w] = { streak: 0, mistakes: ((zhStore.dictProgress[w] && zhStore.dictProgress[w].mistakes) || 0) + 1, nextDue: todayStr };
+      syncAll();
+      updateDashboard();
+      renderDictTrackerPanel();
+      if (currentMode === 'hub') renderBank();
+    }
+  }
+}
+
 function startStage4DictationTest() {
   s4Idx = 0;
   document.getElementById('s4StudyPhase').style.display = 'none';
   document.getElementById('s4FullBankPhase').style.display = 'none';
+  if (document.getElementById('s4TrackerPhase')) document.getElementById('s4TrackerPhase').style.display = 'none';
   document.getElementById('s4TestPhase').style.display = 'block';
   renderStage4TestCard();
   speakStage4Current();
@@ -2375,21 +2533,65 @@ function renderBank() {
   }
 
   const dictContainer = document.getElementById('dictBankContainer');
-  document.getElementById('dictBankBadge').innerText = `${zhStore.dictWrongList.length} 词`;
+  const scopeDictPool = getScopeDictationPool();
+  const allCompletedDict = Array.from(new Set([
+    ...(zhStore.dictMasteredList || []),
+    ...Object.keys(zhStore.dictProgress || {}).filter(w => (zhStore.dictProgress[w].streak || 0) >= 1)
+  ])).filter(w => !(zhStore.dictWrongList || []).includes(w));
+  const stage4CompletedDict = allCompletedDict.filter(w => zhStore.dictProgress[w] && (zhStore.dictProgress[w].streak || 0) >= 4);
+
+  document.getElementById('dictBankBadge').innerText = `错词 ${zhStore.dictWrongList.length} ｜ 已写对 ${allCompletedDict.length}/${scopeDictPool.length}`;
+
+  let dHtml = '';
+  // 上半区：听写错词本
+  dHtml += `<div style="background:#faf5ff; border:1.5px solid #e9d5ff; border-radius:14px; padding:10px 12px; margin-bottom:10px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <strong style="font-size:13px; color:#6b21a8;">❌ 听写错词本（待重练）</strong>
+      <span style="font-size:11px; font-weight:800; color:#6b21a8;">${zhStore.dictWrongList.length} 词</span>
+    </div>`;
   if (zhStore.dictWrongList.length === 0) {
-    dictContainer.innerHTML = '<p style="text-align:center; color:#94a3b8; font-size:13px; padding:12px 0;">目前没有听写错词，继续保持！</p>';
+    dHtml += `<div style="text-align:center; color:#64748b; font-size:12.5px; padding:8px 0;">👏 目前没有听写错词！</div>`;
   } else {
-    let dHtml = '';
     zhStore.dictWrongList.forEach(w => {
       const dItem = DICTATION_DB.find(x => x.w === w);
       const py = dItem ? dItem.py : '';
-      dHtml += `<div class="char-chip" style="width:auto; min-width:92px; padding:4px 10px; background:#f3e8ff; border-color:#d8b4fe;" onclick="inspectDictWrong(&quot;${w}&quot;)">
+      dHtml += `<div class="char-chip" style="width:auto; min-width:92px; padding:4px 10px; background:#fff; border-color:#d8b4fe;" onclick="inspectDictWrong(&quot;${w}&quot;)">
         <span class="c-py" style="color:#6b21a8;">${py}</span>
-        <span class="c-main" style="font-size:22px; color:#581c87;">${w}</span>
+        <span class="c-main" style="font-size:21px; color:#581c87;">${w}</span>
       </div>`;
     });
-    dictContainer.innerHTML = dHtml;
   }
+  dHtml += `</div>`;
+
+  // 下半区：已完成听写的词语与短语（显示艾宾浩斯巩固阶梯 1~4阶）
+  dHtml += `<div style="background:#ecfdf5; border:1.5px solid #a7f3d0; border-radius:14px; padding:10px 12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <strong style="font-size:13px; color:#047857;">✅ 已完成听写的词语/短语（长期记忆巩固榜 · 满4阶 ${stage4CompletedDict.length} 词）</strong>
+      <span style="font-size:11px; font-weight:800; color:#047857;">共 ${allCompletedDict.length} 词</span>
+    </div>`;
+  if (allCompletedDict.length === 0) {
+    dHtml += `<div style="text-align:center; color:#64748b; font-size:12.5px; padding:8px 0;">在【词库听写】写对或点“✅ 已写对 · 推进阶梯”的词语会自动汇总到这里！</div>`;
+  } else {
+    const sortedCompleted = [...allCompletedDict].sort((a, b) => {
+      const sa = (zhStore.dictProgress[a] && zhStore.dictProgress[a].streak) || 1;
+      const sb = (zhStore.dictProgress[b] && zhStore.dictProgress[b].streak) || 1;
+      return sb - sa;
+    });
+    sortedCompleted.forEach(w => {
+      const dItem = DICTATION_DB.find(x => x.w === w);
+      const py = dItem ? dItem.py : '';
+      const st = (zhStore.dictProgress[w] && zhStore.dictProgress[w].streak) || 1;
+      const badgeTxt = st >= 4 ? '🏆 满4阶稳固' : `✅ 已闯 ${st}/4 阶`;
+      const badgeColor = st >= 4 ? '#059669' : '#0284c7';
+      dHtml += `<div class="char-chip" style="width:auto; min-width:96px; padding:4px 10px; background:#fff; border-color:#6ee7b7;" onclick="inspectDictAnyWord(&quot;${w}&quot;)">
+        <span class="c-py" style="color:#059669;">${py}</span>
+        <span class="c-main" style="font-size:21px; color:#065f46;">${w}</span>
+        <span style="font-size:9.5px; color:${badgeColor}; font-weight:800;">${badgeTxt}</span>
+      </div>`;
+    });
+  }
+  dHtml += `</div>`;
+  dictContainer.innerHTML = dHtml;
 }
 
 function inspectBankChar(ch) {
